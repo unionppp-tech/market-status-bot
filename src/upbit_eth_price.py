@@ -30,34 +30,39 @@ def send_message(msg: str):
     print(payload)
 
 # =========================
-# 미국 주식 데이터 조회
+# 미국 주식 데이터 조회 및 휴장일 보정
 # =========================
 def get_us_stock_data(stock_list, start="2024-01-01"):
     data = {}
     for ticker in stock_list:
-        time.sleep(1)  # API 부담 최소화
+        time.sleep(1)
         df = fdr.DataReader(ticker, start)
         if df.empty:
             continue
         df = df[['Open','Close','High','Low']].reset_index()
-        # Date 컬럼을 time으로 통일
+        # 컬럼 통일
         if 'Date' in df.columns:
             df.rename(columns={'Date':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
         else:
             df.rename(columns={'index':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
         df = df.astype({'open':float,'close':float,'high':float,'low':float})
+
+        # 연속 Business Day로 변환, 결측값은 직전일로 채우기
+        df = df.set_index('time').asfreq('B')
+        df[['open','high','low','close']] = df[['open','high','low','close']].fillna(method='ffill')
+        df = df.reset_index()
         data[ticker] = df
     return data
 
 # =========================
-# Squeeze Momentum 계산 (공통)
+# Squeeze Momentum 계산 (코인/주식 공용)
 # =========================
 def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
     source = df['close']
 
     # Bollinger Bands
     df['basis'] = source.rolling(length_bb).mean()
-    df['dev'] = source.rolling(length_bb).std(ddof=0) * mult_kc
+    df['dev'] = source.rolling(length_bb).std(ddof=0) * mult_bb
     df['upper_bb'] = df['basis'] + df['dev']
     df['lower_bb'] = df['basis'] - df['dev']
 
@@ -72,13 +77,13 @@ def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
     df['lower_kc'] = df['ma_kc'] - df['range_ma'] * mult_kc
 
     # Squeeze Off 상태
-    df['sqz_off'] = (df['lower_bb'] < df['lower_kc']) & (df['upper_bb'] > df['upper_kc'])
+    df['sqz_off'] = ((df['lower_bb'] < df['lower_kc']) & (df['upper_bb'] > df['upper_kc'])).fillna(False)
 
     # Momentum
     avg_high = df['high'].rolling(length_kc).max()
     avg_low = df['low'].rolling(length_kc).min()
     avg_close_ma = df['close'].rolling(length_kc).mean()
-    df['val'] = df['close'] - (avg_high + avg_low + avg_close_ma)/3
+    df['val'] = (df['close'] - (avg_high + avg_low + avg_close_ma)/3).fillna(0)
 
     return df[['time','close','high','low','upper_bb','lower_bb','upper_kc','lower_kc','sqz_off','val']]
 
@@ -105,8 +110,8 @@ def check_coins():
         if df is None or len(df) < 30:
             send_message(f"❌ {coin} 데이터 수집 실패")
             continue
-        df = df.rename(columns=str.lower).reset_index()      # 인덱스 초기화
-        df.rename(columns={'index':'time'}, inplace=True)   # 인덱스 → time 컬럼
+        df = df.rename(columns=str.lower).reset_index()
+        df.rename(columns={'index':'time'}, inplace=True)
         df_calc = squeeze_momentum(df)
         check_current_state(coin, df_calc)
 
