@@ -49,48 +49,42 @@ def get_us_stock_data(stock_list, start="2024-01-01"):
     return data
 
 # =========================
-# Squeeze Momentum 계산
+# Squeeze Momentum 계산 (공통)
 # =========================
 def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
-    df = df.copy()
     source = df['close']
 
     # Bollinger Bands
-    df['basis'] = source.rolling(length_bb).mean()
-    df['dev'] = source.rolling(length_bb).std(ddof=0) * mult_bb
+    df['basis'] = source.rolling(length_bb, min_periods=1).mean()
+    df['dev'] = source.rolling(length_bb, min_periods=1).std(ddof=0) * mult_bb
     df['upper_bb'] = df['basis'] + df['dev']
     df['lower_bb'] = df['basis'] - df['dev']
 
     # Keltner Channel
-    df['ma_kc'] = source.rolling(length_kc).mean()
-    tr1 = abs(df['high'] - df['low'])
-    tr2 = abs(df['high'] - df['close'].shift(1))
-    tr3 = abs(df['low'] - df['close'].shift(1))
-    df['true_range'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    df['range_ma'] = df['true_range'].rolling(length_kc).mean()
+    df['ma_kc'] = source.rolling(length_kc, min_periods=1).mean()
+    df['tr1'] = abs(df['high'] - df['low'])
+    df['tr2'] = abs(df['high'] - df['close'].shift(1))
+    df['tr3'] = abs(df['low'] - df['close'].shift(1))
+    df['true_range'] = df[['tr1','tr2','tr3']].max(axis=1)
+    df['range_ma'] = df['true_range'].rolling(length_kc, min_periods=1).mean()
     df['upper_kc'] = df['ma_kc'] + df['range_ma'] * mult_kc
     df['lower_kc'] = df['ma_kc'] - df['range_ma'] * mult_kc
 
-    # Squeeze Off
+    # Squeeze Off 상태
     df['sqz_off'] = (df['lower_bb'] < df['lower_kc']) & (df['upper_bb'] > df['upper_kc'])
 
     # Momentum
-    avg_high = df['high'].rolling(length_kc).max()
-    avg_low = df['low'].rolling(length_kc).min()
-    avg_close = df['close'].rolling(length_kc).mean()
-    df['val'] = df['close'] - (avg_high + avg_low + avg_close)/3
+    avg_high = df['high'].rolling(length_kc, min_periods=1).max()
+    avg_low = df['low'].rolling(length_kc, min_periods=1).min()
+    avg_close_ma = df['close'].rolling(length_kc, min_periods=1).mean()
+    df['val'] = df['close'] - (avg_high + avg_low + avg_close_ma)/3
 
-    df = df.dropna(subset=['upper_bb','lower_bb','upper_kc','lower_kc','sqz_off','val'])
     return df[['time','close','high','low','upper_bb','lower_bb','upper_kc','lower_kc','sqz_off','val']]
 
 # =========================
-# 현재 상태 판단
+# 현재 매수 상태 판단 및 디스코드 전송
 # =========================
 def check_current_state(asset_name, df):
-    if len(df) < 2:
-        send_message(f"❌ {asset_name} 데이터 부족")
-        return
-
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
