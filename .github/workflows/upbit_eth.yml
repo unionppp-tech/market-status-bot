@@ -21,13 +21,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       # 3️⃣ 필요한 라이브러리 설치
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pyupbit pandas FinanceDataReader lxml openpyxl html5lib
+          pip install requests pyupbit pandas lxml openpyxl html5lib
+          pip install git+https://github.com/FinanceData/FinanceDataReader.git
 
       # 4️⃣ Asset Squeeze Momentum 실행
       - name: Run Asset Squeeze Reporter
