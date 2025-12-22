@@ -30,7 +30,7 @@ def send_message(msg: str):
     print(payload)
 
 # =========================
-# 미국 주식 데이터 조회 및 휴장일 보정
+# 미국 주식 데이터 조회
 # =========================
 def get_us_stock_data(stock_list, start="2024-01-01"):
     data = {}
@@ -40,24 +40,19 @@ def get_us_stock_data(stock_list, start="2024-01-01"):
         if df.empty:
             continue
         df = df[['Open','Close','High','Low']].reset_index()
-        # 컬럼 통일
         if 'Date' in df.columns:
             df.rename(columns={'Date':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
         else:
             df.rename(columns={'index':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
         df = df.astype({'open':float,'close':float,'high':float,'low':float})
-
-        # 연속 Business Day로 변환, 결측값은 직전일로 채우기
-        df = df.set_index('time').asfreq('B')
-        df[['open','high','low','close']] = df[['open','high','low','close']].fillna(method='ffill')
-        df = df.reset_index()
         data[ticker] = df
     return data
 
 # =========================
-# Squeeze Momentum 계산 (코인/주식 공용)
+# Squeeze Momentum 계산
 # =========================
 def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
+    df = df.copy()
     source = df['close']
 
     # Bollinger Bands
@@ -68,29 +63,34 @@ def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
 
     # Keltner Channel
     df['ma_kc'] = source.rolling(length_kc).mean()
-    df['tr1'] = abs(df['high'] - df['low'])
-    df['tr2'] = abs(df['high'] - df['close'].shift(1))
-    df['tr3'] = abs(df['low'] - df['close'].shift(1))
-    df['true_range'] = df[['tr1','tr2','tr3']].max(axis=1)
+    tr1 = abs(df['high'] - df['low'])
+    tr2 = abs(df['high'] - df['close'].shift(1))
+    tr3 = abs(df['low'] - df['close'].shift(1))
+    df['true_range'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df['range_ma'] = df['true_range'].rolling(length_kc).mean()
     df['upper_kc'] = df['ma_kc'] + df['range_ma'] * mult_kc
     df['lower_kc'] = df['ma_kc'] - df['range_ma'] * mult_kc
 
-    # Squeeze Off 상태
-    df['sqz_off'] = ((df['lower_bb'] < df['lower_kc']) & (df['upper_bb'] > df['upper_kc'])).fillna(False)
+    # Squeeze Off
+    df['sqz_off'] = (df['lower_bb'] < df['lower_kc']) & (df['upper_bb'] > df['upper_kc'])
 
     # Momentum
     avg_high = df['high'].rolling(length_kc).max()
     avg_low = df['low'].rolling(length_kc).min()
-    avg_close_ma = df['close'].rolling(length_kc).mean()
-    df['val'] = (df['close'] - (avg_high + avg_low + avg_close_ma)/3).fillna(0)
+    avg_close = df['close'].rolling(length_kc).mean()
+    df['val'] = df['close'] - (avg_high + avg_low + avg_close)/3
 
+    df = df.dropna(subset=['upper_bb','lower_bb','upper_kc','lower_kc','sqz_off','val'])
     return df[['time','close','high','low','upper_bb','lower_bb','upper_kc','lower_kc','sqz_off','val']]
 
 # =========================
-# 현재 매수 상태 판단 및 디스코드 전송
+# 현재 상태 판단
 # =========================
 def check_current_state(asset_name, df):
+    if len(df) < 2:
+        send_message(f"❌ {asset_name} 데이터 부족")
+        return
+
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
