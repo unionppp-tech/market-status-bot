@@ -40,8 +40,13 @@ def get_us_stock_data(stock_list, start="2024-01-01"):
         if df.empty:
             continue
         df = df[['Open','Close','High','Low']].reset_index()
-        df.rename(columns={'Date':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
-        data[ticker] = df.astype({'open':float,'close':float,'high':float,'low':float})
+        # Date 컬럼을 time으로 통일
+        if 'Date' in df.columns:
+            df.rename(columns={'Date':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
+        else:
+            df.rename(columns={'index':'time','Open':'open','Close':'close','High':'high','Low':'low'}, inplace=True)
+        df = df.astype({'open':float,'close':float,'high':float,'low':float})
+        data[ticker] = df
     return data
 
 # =========================
@@ -114,7 +119,8 @@ def check_us_stocks():
         if stock not in data:
             send_message(f"❌ {stock} 데이터 수집 실패")
             continue
-        df_calc = squeeze_momentum(data[stock])
+        df = data[stock]
+        df_calc = squeeze_momentum(df)
         check_current_state(stock, df_calc)
 
 # =========================
