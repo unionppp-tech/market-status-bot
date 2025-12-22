@@ -41,3 +41,4 @@ jobs:
           else
             echo "❌ upbit_eth_price.py 파일을 찾을 수 없습니다."
             exit 1
+          fi
