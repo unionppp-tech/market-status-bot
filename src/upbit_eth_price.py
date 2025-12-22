@@ -57,7 +57,7 @@ def squeeze_momentum(df, length_bb=20, mult_bb=2.0, length_kc=20, mult_kc=1.5):
 
     # Bollinger Bands
     df['basis'] = source.rolling(length_bb).mean()
-    df['dev'] = source.rolling(length_bb).std(ddof=0) * mult_bb
+    df['dev'] = source.rolling(length_bb).std(ddof=0) * mult_kc
     df['upper_bb'] = df['basis'] + df['dev']
     df['lower_bb'] = df['basis'] - df['dev']
 
