@@ -1,9 +1,9 @@
-name: Upbit ETH Price
+name: ETH Squeeze Momentum Report
 
 on:
-  schedule:
-    - cron: '0 13 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 13 * * *'   # 매일 22:00 KST (UTC 기준)
 
 permissions:
   contents: read
@@ -11,17 +11,26 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+    steps:
+      # 1️⃣ 레포지토리 코드 가져오기
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Python 환경 설정
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
+      # 3️⃣ 필요한 라이브러리 설치
       - name: Install dependencies
-        run: pip install requests
+        run: |
+          pip install --upgrade pip
+          pip install requests pyupbit
 
-      - name: Run ETH price bot
+      # 4️⃣ ETH Squeeze Momentum 실행
+      - name: Run ETH Squeeze Reporter
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python src/upbit_eth_price.py
