@@ -7,7 +7,7 @@ import pyupbit
 # 환경 변수
 # =========================
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-TICKER = "KRW-ETH"
+TICKERS = ["KRW-BTC", "KRW-ETH", "KRW-XRP"]  # 멀티 코인
 
 
 # =========================
@@ -86,13 +86,14 @@ def check_current_state(df):
 # 실행부 (cron 전용)
 # =========================
 if __name__ == "__main__":
-    df = get_ohlcv(TICKER)
+    for ticker in TICKERS:
+        df = get_ohlcv(ticker)
 
-    if df is None or len(df) < 30:
-        send_message("❌ ETH 데이터 수집 실패")
-        raise SystemExit
+        if df is None or len(df) < 30:
+            send_message(f"❌ {ticker} 데이터 수집 실패")
+            continue
 
-    df = squeeze_momentum(df)
-    state = check_current_state(df)
+        df = squeeze_momentum(df)
+        state = check_current_state(df)
 
-    send_message(f"ETH Squeeze Momentum 상태 → {state}")
+        send_message(f"{ticker} Squeeze Momentum 상태 → {state}")
