@@ -23,13 +23,16 @@ US_STOCKS = ["QQQ", "QLD", "TQQQ", "TSLA", "NVDA"]
 def send_message(msg: str):
     now = datetime.datetime.now()
     payload = {"content": f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] {msg}"}
-    requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Discord send failed: {e}")
     print(payload)
 
 # =========================
 # 미국 주식 데이터 조회
 # =========================
-def get_us_stock_data(stock_list, start="2025-01-01"):
+def get_us_stock_data(stock_list, start="2024-01-01"):
     data = {}
     for ticker in stock_list:
         time.sleep(1)  # API 부담 최소화
@@ -97,7 +100,8 @@ def check_coins():
         if df is None or len(df) < 30:
             send_message(f"❌ {coin} 데이터 수집 실패")
             continue
-        df = df.rename(columns=str.lower).reset_index()
+        df = df.rename(columns=str.lower).reset_index()      # 인덱스 초기화
+        df.rename(columns={'index':'time'}, inplace=True)   # 인덱스 → time 컬럼
         df_calc = squeeze_momentum(df)
         check_current_state(coin, df_calc)
 
