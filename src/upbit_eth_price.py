@@ -13,7 +13,23 @@ import FinanceDataReader as fdr
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 COINS = ["KRW-BTC", "KRW-ETH", "KRW-XRP"]
-US_STOCKS = ["QQQ", "QLD", "TQQQ", "TSLA", "NVDA"]
+
+# 미국 혁신 섹터 (섹터당 대표주 최대 2 + 섹터 ETF). 순서 유지.
+US_SECTORS = {
+    "지수·레버리지": ["QQQ", "QLD", "TQQQ"],
+    "반도체": ["NVDA", "AVGO", "SMH"],
+    "양자컴퓨팅": ["IONQ", "RGTI", "QTUM"],
+    "양자통신·보안": ["ARQQ", "LAES"],
+    "AI·데이터": ["PLTR", "AI", "BOTZ"],
+    "사이버보안": ["CRWD", "PANW", "CIBR"],
+    "우주·방산": ["RKLB", "LMT", "ARKX"],
+    "전기차·자율주행": ["TSLA", "RIVN"],
+    "의약·바이오": ["LLY", "NVO", "XBI"],
+    "유전자·유전체": ["CRSP", "ARKG"],
+}
+
+# 리포트에서 ·ETF 로 표기할 티커(섹터 ETF)
+ETF_TICKERS = {"SMH", "QTUM", "BOTZ", "CIBR", "ARKX", "XBI", "ARKG"}
 
 # 지표 파라미터 (TradingView 설정과 동일)
 LENGTH_BB = 20
@@ -177,8 +193,9 @@ def format_state_line(info: dict) -> str:
     val_str = f"{val:+,.0f}" if abs(val) >= 1000 else f"{val:+.2f}"
     close = f"{info['close']:,.0f}" if info["close"] >= 1000 else f"{info['close']:,.2f}"
     ev = f"  ⚡오늘:{'·'.join(info['events'])}" if info["events"] else ""
+    name = info["asset"] + ("·ETF" if info["asset"] in ETF_TICKERS else "")
     return (
-        f"{label}  {info['asset']} | {info['date']} | "
+        f"{label}  {name} | {info['date']} | "
         f"val {val_str}{info['dir']} | {info['sqz']} | 종가 {close}{ev}"
     )
 
@@ -220,9 +237,11 @@ def get_coin_df(coin: str):
 # 전 종목 상태 수집
 # =========================
 def collect_report():
-    coin_lines, us_lines, errors = [], [], []
+    """반환: blocks = [(섹터명, [상태라인, ...]), ...], errors = [..]"""
+    blocks, errors = [], []
 
     # 코인: 마지막 완성 봉(iloc[-2]) 기준
+    coin_lines = []
     for coin in COINS:
         try:
             df = get_coin_df(coin)
@@ -234,35 +253,58 @@ def collect_report():
             time.sleep(0.2)
         except Exception as e:
             errors.append(f"❌ {coin} 처리 오류: {e}")
+    if coin_lines:
+        blocks.append(("코인", coin_lines))
 
-    # 미국주식: 최신 완성 봉(iloc[-1]) 기준
-    for stock in US_STOCKS:
-        try:
-            time.sleep(1)
-            df = get_us_stock_df(stock)
-            if df is None:
-                errors.append(f"❌ {stock} 데이터 수집 실패"); continue
-            info = evaluate_asset(stock, df, use_last_closed=False)
-            if info:
-                us_lines.append(format_state_line(info))
-        except Exception as e:
-            errors.append(f"❌ {stock} 처리 오류: {e}")
+    # 미국주식: 섹터별, 최신 완성 봉(iloc[-1]) 기준
+    for sector, tickers in US_SECTORS.items():
+        lines = []
+        for t in tickers:
+            try:
+                time.sleep(0.5)
+                df = get_us_stock_df(t)
+                if df is None:
+                    errors.append(f"❌ {t} 데이터 수집 실패"); continue
+                info = evaluate_asset(t, df, use_last_closed=False)
+                if info:
+                    lines.append(format_state_line(info))
+            except Exception as e:
+                errors.append(f"❌ {t} 처리 오류: {e}")
+        if lines:
+            blocks.append((sector, lines))
 
-    return coin_lines, us_lines, errors
+    return blocks, errors
+
+
+LEGEND = "범례 🟢보유 🔴약세 🟡관망 · ▲▼모멘텀 · sqzOn/Off · ⚡전환"
+MAX_LEN = 1800  # 디스코드 2000자 - 타임스탬프/여유
+
+
+def send_report(blocks, errors):
+    title = "📊 **스퀴즈 모멘텀 상태 리포트**\n" + LEGEND
+    segments = [f"\n\n**[{s}]**\n" + "\n".join(lines) for s, lines in blocks]
+    if errors:
+        segments.append("\n\n" + "\n".join(errors))
+
+    chunks, cur = [], title
+    for seg in segments:
+        if len(cur) + len(seg) > MAX_LEN and cur:
+            chunks.append(cur)
+            cur = seg.lstrip("\n")
+        else:
+            cur += seg
+    if cur:
+        chunks.append(cur)
+
+    for i, msg in enumerate(chunks):
+        send_message(msg)
+        if i < len(chunks) - 1:
+            time.sleep(0.5)
 
 
 def main():
-    coin_lines, us_lines, errors = collect_report()
-
-    parts = ["📊 **스퀴즈 모멘텀 상태 리포트**"]
-    if coin_lines:
-        parts.append("\n**[코인]**\n" + "\n".join(coin_lines))
-    if us_lines:
-        parts.append("\n**[미국주식]**\n" + "\n".join(us_lines))
-    if errors:
-        parts.append("\n" + "\n".join(errors))
-
-    send_message("\n".join(parts))
+    blocks, errors = collect_report()
+    send_report(blocks, errors)
 
 
 if __name__ == "__main__":
