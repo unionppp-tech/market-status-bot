@@ -219,6 +219,11 @@ def get_us_stock_df(ticker: str):
         inplace=True,
     )
     df = df.astype({"open": float, "close": float, "high": float, "low": float})
+    # 미완성(당일) 봉 제외 — 21시 KST(=미국 프리마켓)엔 당일 미국 정규장 미마감.
+    # UTC 오늘 날짜 이상인 봉을 버려 '마지막 완성 봉'만 남긴다(process_orders_on_close 일치).
+    today_utc = datetime.datetime.now(datetime.timezone.utc).date()
+    df["time"] = pd.to_datetime(df["time"])
+    df = df[df["time"].dt.date < today_utc].reset_index(drop=True)
     return df
 
 
