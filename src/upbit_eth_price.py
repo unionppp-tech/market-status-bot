@@ -122,23 +122,24 @@ def squeeze_momentum(df: pd.DataFrame) -> pd.DataFrame:
     check1 = cond1.astype(int)
     check2 = cond2.astype(int)
 
-    is_vola_start = check1.diff().fillna(0) == 1
-    is_mom_change = check2.diff().fillna(0) != 0
-    is_mom_change2 = check2.diff().fillna(0) == 1
+    is_vola_start = check1.diff().fillna(0) == 1     # 스퀴즈 발화(십자가 불)
+    is_mom_up = check2.diff().fillna(0) == 1         # val 음수→양수 전환
+    is_mom_down = check2.diff().fillna(0) == -1      # val 양수→음수 전환
 
-    df["is_long"] = (is_vola_start & cond2) | (is_mom_change2 & cond1)
-    df["is_close"] = is_mom_change
-    df["is_short"] = is_vola_start & (~cond2)
+    # 매수: (발화 & val>0) 또는 (스퀴즈 해제 상태에서 val 양전) — 사용자 정의
+    df["is_long"] = (is_vola_start & cond2) | (is_mom_up & cond1)
+    # 매도(청산): val이 음수로 하향 전환되는 순간
+    df["is_sell"] = is_mom_down
 
-    # 포지션 시뮬레이션 (원본 순서: 진입 후 청산). pos=1 보유 / 0 현금
+    # 포지션 시뮬레이션: 매수 진입, 매도 청산. pos=1 보유 / 0 현금
     pos = np.zeros(len(df), dtype=int)
     cur = 0
     il = df["is_long"].to_numpy()
-    ic = df["is_close"].to_numpy()
+    isl = df["is_sell"].to_numpy()
     for i in range(len(df)):
         if il[i]:
             cur = 1
-        if ic[i]:
+        if isl[i]:
             cur = 0
         pos[i] = cur
     df["pos"] = pos
@@ -161,10 +162,8 @@ def evaluate_asset(asset_name: str, df: pd.DataFrame, use_last_closed: bool):
     events = []
     if bool(row["is_long"]):
         events.append("진입")
-    if bool(row["is_close"]):
+    if bool(row["is_sell"]):
         events.append("청산")
-    if bool(row["is_short"]):
-        events.append("숏")
 
     if int(row["pos"]) == 1:
         state = "buy"     # 전략상 보유(매수 유지)
@@ -276,7 +275,7 @@ def collect_report():
     return blocks, errors
 
 
-LEGEND = "범례 🟢보유 🔴약세 🟡관망 · ▲▼모멘텀 · sqzOn/Off · ⚡전환"
+LEGEND = "범례 🟢보유 🔴약세 🟡관망 · ▲▼모멘텀 · sqzOn/Off · ⚡진입/청산"
 MAX_LEN = 1800  # 디스코드 2000자 - 타임스탬프/여유
 
 
