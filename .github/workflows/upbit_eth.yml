@@ -6,42 +6,22 @@ on:
     - cron: '0 12 * * *'   # 매일 21:00 KST (UTC 12:00)
 
 permissions:
-  contents: write   # state.json 커밋(중복 알림 방지)을 위해 write
+  contents: read
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
     steps:
-      # 1️⃣ 레포지토리 코드 가져오기
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # 2️⃣ Python 환경 설정
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      # 3️⃣ 필요한 라이브러리 설치
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests pyupbit pandas numpy lxml openpyxl html5lib
           pip install git+https://github.com/FinanceData/FinanceDataReader.git
-
-      # 4️⃣ Asset Squeeze Momentum 실행
       - name: Run Asset Squeeze Reporter
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python src/upbit_eth_price.py
-
-      # 5️⃣ 중복 알림 방지용 상태 파일 커밋 (변경 있을 때만)
-      - name: Commit signal state
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json || true
-          git diff --cached --quiet || git commit -m "chore: update signal state [skip ci]"
-          git push || true
