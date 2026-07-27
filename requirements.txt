@@ -2,7 +2,3 @@ requests
 pyupbit
 pandas
 numpy
-lxml
-openpyxl
-html5lib
-finance-datareader

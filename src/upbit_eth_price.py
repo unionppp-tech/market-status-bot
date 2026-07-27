@@ -5,7 +5,6 @@ import requests
 import numpy as np
 import pandas as pd
 import pyupbit
-import FinanceDataReader as fdr
 
 # =========================
 # 환경 변수 / 설정
@@ -202,23 +201,64 @@ def format_state_line(info: dict) -> str:
 # =========================
 # 데이터 조회
 # =========================
+YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+
+
+def _yahoo_chart_json(ticker: str):
+    """야후 chart API에서 일봉 원시 JSON을 받는다(호스트 1회 폴백)."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    period1 = int((now - datetime.timedelta(days=400)).timestamp())
+    period2 = int(now.timestamp())
+    params = f"?period1={period1}&period2={period2}&interval=1d"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    last_err = None
+    for host in YAHOO_HOSTS:
+        url = f"https://{host}/v8/finance/chart/{ticker}{params}"
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            if r.status_code == 200:
+                return r.json()
+            last_err = f"HTTP {r.status_code}"
+        except Exception as e:
+            last_err = str(e)
+    raise RuntimeError(last_err or "요청 실패")
+
+
 def get_us_stock_df(ticker: str):
-    start = (datetime.date.today() - datetime.timedelta(days=400)).strftime("%Y-%m-%d")
-    df = fdr.DataReader(ticker, start)
-    if df is None or df.empty:
+    """야후 파이낸스 chart API로 배당·분할 조정 OHLC 일봉을 만든다.
+
+    (기존 Stooq/FinanceDataReader가 anti-bot 차단으로 CSV 대신 검증 페이지를 반환 → 교체.)
+    조정가 = raw × (adjclose/close), close = adjclose 로 TradingView ADJ(수정주가)와 정합.
+    """
+    j = _yahoo_chart_json(ticker)
+    res = (j.get("chart", {}).get("result") or [None])[0]
+    if not res:
         return None
-    df = df[["Open", "Close", "High", "Low"]].reset_index()
-    date_col = "Date" if "Date" in df.columns else "index"
-    df.rename(
-        columns={date_col: "time", "Open": "open", "Close": "close",
-                 "High": "high", "Low": "low"},
-        inplace=True,
-    )
-    df = df.astype({"open": float, "close": float, "high": float, "low": float})
+    ts = res.get("timestamp") or []
+    ind = res.get("indicators", {})
+    quote = (ind.get("quote") or [{}])[0]
+    adj = ((ind.get("adjclose") or [{}])[0]).get("adjclose") or []
+    o_ = quote.get("open") or []
+    h_ = quote.get("high") or []
+    l_ = quote.get("low") or []
+    c_ = quote.get("close") or []
+    rows = []
+    for i in range(len(ts)):
+        if i >= len(o_) or i >= len(h_) or i >= len(l_) or i >= len(c_) or i >= len(adj):
+            continue
+        o, h, l, c, ac = o_[i], h_[i], l_[i], c_[i], adj[i]
+        if None in (o, h, l, c, ac) or c == 0:
+            continue
+        f = ac / c  # 조정 계수
+        rows.append((ts[i], o * f, h * f, l * f, ac))
+    if len(rows) < LENGTH_KC + 3:
+        return None
+    df = pd.DataFrame(rows, columns=["time", "open", "high", "low", "close"])
+    df = df.astype({"open": float, "high": float, "low": float, "close": float})
     # 미완성(당일) 봉 제외 — 21시 KST(=미국 프리마켓)엔 당일 정규장 미마감.
     # UTC 오늘 날짜 이상인 봉을 버려 '마지막 완성 봉'만 남긴다(process_orders_on_close 일치).
     today_utc = datetime.datetime.now(datetime.timezone.utc).date()
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = pd.to_datetime(df["time"], unit="s")
     df = df[df["time"].dt.date < today_utc].reset_index(drop=True)
     return df
 
