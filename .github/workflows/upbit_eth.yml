@@ -19,8 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pyupbit pandas numpy lxml openpyxl html5lib
-          pip install git+https://github.com/FinanceData/FinanceDataReader.git
+          pip install -r requirements.txt
       - name: Run Asset Squeeze Reporter
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
